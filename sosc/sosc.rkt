@@ -1,14 +1,19 @@
 #lang racket
 
-(require
-  rnrs
-  rhs/rhs
-  "bytevector.rkt"
-  rnrs/bytevectors-6 ;; TODO - should be provided by bytevector.rkt
-  rnrs/io/ports-6
-  )
+(require racket/fixnum
+         "bytevector.rkt"
+         )
 
-(provide message
+;zip-with (a -> b -> c) -> [a] -> [b] -> [c]  
+(define zip-with
+  (lambda (f a b)
+    (cond ((null? a) '())
+          ((null? b) '())
+          (else (cons (f (car a) (car b))
+                      (zip-with f (cdr a) (cdr b)))))))
+
+(provide (all-defined-out)
+         message
          bundle
          encode-osc
          decode-osc
@@ -95,7 +100,7 @@
     (bytevector-make-and-set1
      bytevector-u8-set!
      1
-     (exact n))))
+     (inexact->exact n))))
 
 ;; int -> bytevector
 (define encode-u16
@@ -103,7 +108,7 @@
     (bytevector-make-and-set
      bytevector-u16-set!
      2
-     (exact n))))
+     (inexact->exact n))))
 
 ;; int -> bytevector
 (define encode-u32
@@ -111,7 +116,7 @@
     (bytevector-make-and-set
      bytevector-u32-set!
      4
-     (exact n))))
+     (inexact->exact n))))
 
 ;; int -> bytevector
 (define encode-u64
@@ -119,7 +124,7 @@
     (bytevector-make-and-set
      bytevector-u64-set!
      8
-     (exact n))))
+     (inexact->exact n))))
 
 ;; int -> bytevector
 (define encode-i8
@@ -127,7 +132,7 @@
     (bytevector-make-and-set1
      bytevector-s8-set!
      1
-     (exact n))))
+     (inexact->exact n))))
 
 ;; int -> bytevector
 (define encode-i16
@@ -135,7 +140,7 @@
     (bytevector-make-and-set
      bytevector-s16-set!
      2
-     (exact n))))
+     (inexact->exact n))))
 
 ;; int -> bytevector
 (define encode-i32
@@ -143,7 +148,7 @@
     (bytevector-make-and-set
      bytevector-s32-set!
      4
-     (exact n))))
+     (inexact->exact n))))
 
 ;; int -> bytevector
 (define encode-i64
@@ -151,7 +156,7 @@
     (bytevector-make-and-set
      bytevector-s64-set!
      8
-     (exact n))))
+     (inexact->exact n))))
 
 ;; double -> bytevector
 (define encode-f32
@@ -159,7 +164,7 @@
     (bytevector-make-and-set
      bytevector-ieee-single-set!
      4
-     (inexact n))))
+     (exact->inexact n))))
 
 ;; double -> bytevector
 (define encode-f64
@@ -167,7 +172,7 @@
     (bytevector-make-and-set
      bytevector-ieee-double-set!
      8
-     (inexact n))))
+     (exact->inexact n))))
 
 ;; string -> bytevector
 (define encode-str
@@ -198,16 +203,21 @@
 ;; port -> string
 (define read-cstr
   (lambda (p)
-    (let loop ((l nil)
+    (let loop ((l '())
 	       (b (get-u8 p)))
       (if (= b 0)
-	  (list->string (map1 integer->char (reverse l)))
+	  (list->string (map integer->char (reverse l)))
 	  (loop (cons b l) (get-u8 p))))))
 
 ;; port -> int -> bytevector
 (define read-bstr
   (lambda (p n)
     (get-bytevector-n p n)))
+
+;; port -> int
+(define read-i8
+  (lambda (p)
+    (decode-i8 (read-bstr p 1))))
 
 ;; port -> int
 (define read-i16
@@ -256,7 +266,7 @@
 ;; double -> int
 (define ntpr->ntp
   (lambda (n)
-    (exact (round (* n (expt 2 32))))))
+    (inexact->exact (round (* n (expt 2 32))))))
 
 ;; double -> double
 (define utc->ntpr
@@ -272,8 +282,8 @@
 (define read-ostr
   (lambda (p)
     (let* ((s (read-cstr p))
-	   (n (mod (cstring-length s) 4))
-	   (i (- 4 (mod n 4))))
+	   (n (remainder (cstring-length s) 4))
+	   (i (- 4 (remainder n 4))))
       (if (not (= n 0))
 	  (read-bstr p i)
 	  #f)
@@ -284,7 +294,7 @@
   (lambda (p)
     (let* ((n (read-i32 p))
 	   (b (read-bstr p n))
-	   (i (- 4 (mod n 4))))
+	   (i (- 4 (remainder n 4))))
       (if (not (= n 0))
 	  (read-bstr p i)
 	  #f)
@@ -363,11 +373,11 @@
     (zip-with
      (lambda (b n)
        (display (list (number->string b 16) (integer->char b)))
-       (if (= 3 (mod n 4))
+       (if (= 3 (remainder n 4))
 	   (newline)
 	   (display #\space)))
      l
-     (enum-from-to 0 (- (length l) 1)))))
+     (range 0 (- (length l) 1)))))
 
 ;; string -> int
 (define cstring-length
@@ -375,14 +385,15 @@
     (+ 1 (string-length s))))
 
 ;; int -> int
-;; (equal? (map osc-align (enum-from-to 0 7)) (list 0 3 2 1 0 3 2 1))
+;; (equal? (map osc-align (range 0 7)) (list 0 3 2 1 0 3 2 1))
 (define osc-align
   (lambda (n)
     (- (fxand (+ n 3) (fxnot 3)) n)))
 
 ;; int -> [bytevector]
 (define padding-of
-  (lambda (n) (replicate (osc-align n) (encode-u8 0))))
+  ;(lambda (n) (replicate (osc-align n) (encode-u8 0))))
+  (lambda (n) (make-list (osc-align n) (encode-u8 0))))
 
 ;; string -> [bytevector]
 (define encode-string
@@ -413,10 +424,11 @@
     (encode-string
      (list->string
       (cons #\,
-	    (map1 (lambda (e)
-		    (cond ((number? e) (if (integer? e)
-					   #\i
-					   #\f))
+	    (map (lambda (e)
+               (cond ((number? e)
+                      (if (integer? e)
+                          #\i
+                          #\f))
 			  ((string? e) #\s)
 			  ((bytevector? e) #\b)
 			  (else (error "encode-types" "type?" e))))
@@ -427,14 +439,14 @@
   (lambda (m)
     (list (encode-string (car m))
 	  (encode-types (cdr m))
-	  (map1 encode-value (cdr m)))))
+	  (map encode-value (cdr m)))))
 
 ;; osc -> [bytevector]
 (define encode-bundle-ntp
   (lambda (b)
     (list (encode-string "#bundle")
 	  (encode-u64 (ntpr->ntp (car b)))
-	  (map1 (lambda (e)
+	  (map (lambda (e)
 		  (if (message? e)
 		      (encode-bytes (encode-osc e))
 		      (error "encode-bundle" "illegal value" e)))
@@ -457,7 +469,7 @@
 (define purify
   (lambda (e)
     (cond ((or (number? e) (string? e) (bytevector? e)) e)
-	  ((list? e) (map1 purify e))
+	  ((list? e) (map purify e))
 	  ((symbol? e) (symbol->string e))
 	  ((boolean? e) (if e 1 0))
 	  (else (error "purify" "illegal input" e)))))
@@ -500,7 +512,7 @@
 (define verify-message
   (lambda (m)
     (and (string? (car m))
-	  (all (lambda (e) (or (number? e)
+	  (and (lambda (e) (or (number? e)
 			       (string? e)))
 	       (cdr m)))))
 
@@ -508,7 +520,7 @@
 (define verify-bundle
   (lambda (b)
     (and (integer? (car b))
-	  (all (lambda (e) (or (verify-message e)
+	  (and (lambda (e) (or (verify-message e)
 				(and (verify-bundle e)
 				      (>= (car e) (car b)))))
 	       (cdr b)))))
@@ -519,6 +531,21 @@
     (or (verify-message p)
 	 (verify-bundle p))))
 
+(define flatten-bytevectors
+  (lambda (t)
+    (let* ((l (flatten t))
+	   (n (map bytevector-length l))
+	   (m (foldl + 0 n))
+	   (v (make-bytevector m)))
+      (let loop ((i 0)
+		 (l l)
+		 (n n))
+	(if (null? l)
+	    v
+	    (let ((l0 (car l))
+		  (n0 (car n)))
+	      (bytevector-copy! l0 0 v i n0)
+	      (loop (+ i n0) (cdr l) (cdr n))))))))
 
 
 (module+ test
@@ -550,7 +577,25 @@
 
 (define m1 (encode-osc (message "/a/b" (list 257))))
 
+(define osc1
+  (encode-osc 
+   (message "/abc/def"
+            (list
+             3 6 2.278 
+             "froggy"
+             #"derple"))))
 
+(define m2 (message "/abc/def"
+            (list
+             3 6 2.278 
+             "froggy"
+             #"derple")))
+(define e1 (encode-message m2))
+(encode-types (cdr m2))
+(define e2 (map encode-value (cdr m2)))
+(map bytevector-length (flatten e2))
+
+(for/list ([x (in-mlist (decode-osc m2))]) x)
 
 ;; try to create a call graph
 (require profile)

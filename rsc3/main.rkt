@@ -1,13 +1,18 @@
 #lang racket
 
+;;; History
+;;;    2015.12.21 PLu
+;;;       Conserving the position of the parameters to synthdef
+;;;
+
 (require
-  rnrs
+  rnrs                       ;; R6RS    
   rhs/rhs
   sosc/bytevector
   sosc/transport
   sosc/sosc
-  (prefix-in srfi: srfi/27)
-  (prefix-in srfi: srfi/19))
+  (prefix-in srfi: srfi/27)  ;; Random bits
+  (prefix-in srfi: srfi/19)) ;; Time Data Types, now defined in racket/base 
 
 ;; TODO - export only useful funcs
 (provide (all-defined-out)
@@ -192,6 +197,7 @@
       (or (null? xs)
 	  (and (= (+ x 1) (head xs))
 	       (consecutive? xs))))))
+
 ;; int -> uid
 (define-record-type uid
   (fields n))
@@ -209,7 +215,7 @@
 
 ;; string -> float -> rate -> float -> control*
 (define-record-type control*
-  (fields name default rate lag))
+  (fields name default rate index))
 
 ;; string -> [float] -> [float] -> [controls] -> [ugens] -> graphdef
 (define-record-type graphdef
@@ -470,15 +476,19 @@
 	(encode-i16 (length u))
 	(map1 encode-ugen u))))))
 
+;; PLu, this causes the loss of the order of the arguments of the synthdef
+;;
 ;; syntax for binding control values
 (define-syntax letc
-  (syntax-rules ()
-    ((_ () expr)
-     expr)
-    ((_ ((name default) ...) expr)
-     (let ((name (make-control* (symbol->string (quote name)) default kr 0))
-	   ...)
-       expr))))
+  (lambda (stx)
+    (syntax-case stx ()
+      ((_ () expr)
+       #'expr)
+      ((_ ((name default) ...) expr)
+       (with-syntax (((idx ...) #`(#,@(build-list (length (syntax->datum #'(name ...))) abs))))
+         #'(let ((name (make-control* (symbol->string (quote name)) default kr idx))
+                 ...)
+             expr))))))
 
 ;; node = ugen | proxy | control* | float
 
@@ -550,6 +560,10 @@
                          (prepare-root (mrg-right u))))
      (else u))))
 
+;; PLu, this is not preserving the order of the arguments of the syntdef.
+;; The order is important when sendign parameters using the n_setn commad.
+;; The order is acctualy lost in letc, before it reaches synthdef
+;;
 ;; string -> ugen -> graphdef
 (define synthdef
   (lambda (name pre-u)
@@ -591,12 +605,12 @@
 ;; control* -> [control*] -> control
 (define control*-to-control
   (lambda (c cc)
-    (make-control (control*-name c) (calculate-index c cc))))
+    (make-control (control*-name c) (control*-index c))))
 
 ;; control* -> [control*] -> input
 (define control*-to-input
   (lambda (c cc)
-    (make-input 0 (calculate-index c cc))))
+    (make-input 0 (control*-index c))))
 
 ;; ugen -> [ugen] -> input
 (define ugen-to-input

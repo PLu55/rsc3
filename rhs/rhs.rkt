@@ -13,7 +13,7 @@ Licensed under GPL (2 or 3? FIXME)
 
 |#
 
-(require rnrs)
+;(require rnrs)
 
 (provide (all-defined-out))
 
@@ -26,6 +26,14 @@ Licensed under GPL (2 or 3? FIXME)
 (define inexact exact->inexact)
 
 (define mod remainder)
+;(define map1 map)
+;(define nil '())
+;(define (zip-with a b c))
+;(define enum-from-to range) 
+
+
+;(define replicate make-list) 
+;(define (all . a))
 |#
 
 ;; JBC, 2014-- looks like most of these library functions have
@@ -757,13 +765,13 @@ Licensed under GPL (2 or 3? FIXME)
 ;; data/tree.scm ;;;;;;;;;;;;;;
 
 ;; Tree a -> [a]
-(define flatten
-  (letrec ((f (lambda (t r)
-		(cond ((null? t) r)
-		      ((pair? t) (f (head t) (f (tail t) r)))
-		      (else (cons t r))))))
-    (lambda (t)
-      (f t nil))))
+;; (define flatten
+;;   (letrec ((f (lambda (t r)
+;; 		(cond ((null? t) r)
+;; 		      ((pair? t) (f (head t) (f (tail t) r)))
+;; 		      (else (cons t r))))))
+;;     (lambda (t)
+;;       (f t nil))))
 
 ;; Tree a -> [[a]]
 (define levels

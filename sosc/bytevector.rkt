@@ -6,9 +6,37 @@
          rnrs/io/ports-6)
 
 (provide (all-defined-out)
+         lookahead-u8
+         get-u8
+         make-bytevector
+         bytevector-copy!
+         bytevector?
          put-bytevector
          get-bytevector-n
-         bytevector-length)
+         utf8->string
+         string->utf8
+         bytevector-length
+         bytevector-u8-ref
+         bytevector-u16-ref
+         bytevector-u32-ref
+         bytevector-u64-ref
+         bytevector-s8-ref
+         bytevector-s16-ref
+         bytevector-s32-ref
+         bytevector-s64-ref
+         bytevector-ieee-single-ref
+         bytevector-ieee-double-ref
+         bytevector-u8-set!
+         bytevector-u16-set!
+         bytevector-u32-set!
+         bytevector-u64-set!
+         bytevector-s8-set!
+         bytevector-s16-set!
+         bytevector-s32-set!
+         bytevector-s64-set!
+         bytevector-ieee-single-set!
+         bytevector-ieee-double-set!
+         endianness)
 
 ;; JBC-2014 -- looks like all of these have
 ;; equivalents in Racket...
@@ -39,21 +67,21 @@
       (f 0))))
 
 ;; Tree bytevector -> bytevector
-(define flatten-bytevectors
-  (lambda (t)
-    (let* ((l (flatten t))
-	   (n (map1 bytevector-length l))
-	   (m (sum n))
-	   (v (make-bytevector m)))
-      (let loop ((i 0)
-		 (l l)
-		 (n n))
-	(if (null? l)
-	    v
-	    (let ((l0 (car l))
-		  (n0 (car n)))
-	      (bytevector-copy! l0 0 v i n0)
-	      (loop (+ i n0) (cdr l) (cdr n))))))))
+;; (define flatten-bytevectors
+;;   (lambda (t)
+;;     (let* ((l (flatten t))
+;; 	   (n (map bytevector-length l))
+;; 	   (m (foldl + 0 n))
+;; 	   (v (make-bytevector m)))
+;;       (let loop ((i 0)
+;; 		 (l l)
+;; 		 (n n))
+;; 	(if (null? l)
+;; 	    v
+;; 	    (let ((l0 (car l))
+;; 		  (n0 (car n)))
+;; 	      (bytevector-copy! l0 0 v i n0)
+;; 	      (loop (+ i n0) (cdr l) (cdr n))))))))
 
 ;; number a => (bytevector -> int -> a -> ()) -> int -> a
 (define bytevector-make-and-set1
@@ -87,5 +115,6 @@
      (check-exn exn:fail? (λ () (bytevector-section long-vec 0 30)))
      (check-exn exn:fail? (λ () (bytevector-section long-vec -1 3)))))
   
-  (check-equal? (flatten-bytevectors (list (bytes 10 20) (bytes 30 40) (list (bytes 50 60))))
-                (bytes 10 20 30 40 50 60)))
+  ;;  (check-equal? (flatten-bytevectors (list (bytes 10 20) (bytes 30 40) (list (bytes 50 60))))
+  ;;                (bytes 10 20 30 40 50 60))
+  )
