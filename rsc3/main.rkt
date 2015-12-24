@@ -4,13 +4,14 @@
 ;;;    2015.12.21 PLu
 ;;;       Conserving the position of the parameters to synthdef
 ;;;
+;;; Problems:
+;;;    2015.12.24 PLu
+;;;       Synthdef version is set to zero!
 
 (require
-  rnrs                       ;; R6RS    
-  rhs/rhs
-  sosc/bytevector
-  sosc/transport
-  sosc/sosc
+  "../sosc/bytevector.rkt"
+  "../sosc/transport.rkt"
+  "../sosc/sosc.rkt"
   (prefix-in srfi: srfi/27)  ;; Random bits
   (prefix-in srfi: srfi/19)) ;; Time Data Types, now defined in racket/base 
 
@@ -18,20 +19,150 @@
 (provide (all-defined-out)
          send)
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Replacing rhs
+
+;;; Replaced
+;(define nil '())
+;(define head car)
+;(define tail cdr)
+;(define tuple2 cons)
+;(define fst car)
+;(define snd cdr)
+;(define replicate make-list)
+;(define mlength length)
+;(define (enum-from-to f t) (range f (add1 t)))
+
+(define zip-with
+  (lambda (f a b)
+    (cond ((null? a) '())
+          ((null? b) '())
+          (else (cons (f (car a) (car b))
+                      (zip-with f (cdr a) (cdr b)))))))
+
+(define map-accum-l
+  (lambda (f s l)
+    (if (null? l)
+        (cons s '())
+        (let* ((x (car l))
+               (xs (cdr l))
+               (s_y (f s x))
+               (s_ (car s_y))
+               (y (cdr s_y))
+               (s__ys (map-accum-l f s_ xs))
+               (s__ (car s__ys))
+               (ys (cdr s__ys)))
+          (cons s__ (cons y ys))))))
+
+(define foldl1
+  (lambda (f l)
+    (foldl f (car l) (cdr l))))
+
+(define-syntax replicate-m
+  (syntax-rules ()
+    ((_ i x)
+     (replicate-m* i (lambda () x)))))
+
+;; int -> (() -> a) -> [a]
+(define replicate-m*
+  (lambda (i x)
+    (if (<= i 0)
+        '()
+        (cons (x) (replicate-m* (- i 1) x)))))
+
+;; concat :: [[a]] -> [a]
+(define concat
+  (lambda (l)
+    (foldr append '() l)))
+
+;; concatMap :: (a -> [b]) -> [a] -> [b]
+(define concat-map
+  (lambda (f l)
+    (concat (map f l))))
+
+;; nub :: (Eq a) => [a] -> [a]
+(define nub
+  (lambda (l)
+    (nub-by equal? l)))
+
+;; nubBy :: (a -> a -> Bool) -> [a] -> [a]
+(define nub-by
+  (lambda (f l)
+    (if (null? l)
+        '()
+        (let ((x (car l))
+              (xs (cdr l)))
+          (cons x (nub-by f (filter (lambda (y) (not (f x y))) xs)))))))
+
+;; findIndex :: (a -> Bool) -> [a] -> Maybe Int
+(define find-index
+  (letrec ((g (lambda (f l n)
+                (if (null? l)
+                    #f
+                    (if (f (car l))
+                        n
+                        (g f (cdr l) (+ n 1)))))))
+    (lambda (f l)
+      (g f l 0))))
+
+;; transpose :: [[a]] -> [[a]]
+(define transpose
+  (lambda (l)
+    (let ((protect
+           (lambda (f)
+             (lambda (x)
+               (if (null? x)
+                   '()
+                   (f x))))))
+      (cond ((null? l) '())
+            ((null? (car l)) (transpose (cdr l)))
+            (else (let* ((e (car l))
+                         (x (car e))
+                         (xs (cdr e))
+                         (xss (cdr l)))
+                    (cons (cons x
+                                (filter (compose not null?)
+                                        (map (protect car) xss)))
+                          (transpose (cons xs
+                                           (map (protect cdr) xss))))))))))
+
+;; maximum :: (Ord a) => [a] -> a
+(define maximum
+  (lambda (l)
+    (foldl1 max l)))
+
+;; intersperse :: a -> [a] -> [a]
+(define intersperse
+  (lambda (x l)
+    (cond ((null? l) '())
+          ((null? (cdr l)) l)
+          (else (cons (car l) (cons x (intersperse x (cdr l))))))))
+
+;; zipWith3 :: (a -> b -> c -> d) -> [a] -> [b] -> [c] -> [d]
+(define zip-with3
+  (lambda (f a b c)
+    (cond ((null? a) '())
+          ((null? b) '())
+          ((null? c) '())
+          (else (cons (f (car a) (car b) (car c))
+                      (zip-with3 f (cdr a) (cdr b) (cdr c)))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 ;; [a] -> int -> [a]
 (define extend
   (lambda (l n)
     (let ((z (length l)))
       (cond ((= z n) l)
             ((> z n) (take n l))
-            (else (extend (append2 l l) n))))))
+            (else (extend (append l l) n))))))
 
 ;; [a] -> int -> [a]
 (define take-cycle
   (lambda (l n)
     (if (null? l)
-        nil
-        (cons (head l)
+        '()
+        (cons (car l)
               (take-cycle (drop n l) n)))))
 
 ;; (a -> a -> a) -> ([a] -> [a])
@@ -52,8 +183,8 @@
     (lambda (l)
       (let ((x (car l))
             (xs (cdr l))
-            (g (lambda (a x) (let ((y (f a x))) (tuple2 y y)))))
-        (cons x (snd (map-accum-l g x xs)))))))
+            (g (lambda (a x) (let ((y (f a x))) (cons y y)))))
+        (cons x (cdr (map-accum-l g x xs)))))))
 
 ;; num a => [a] -> [a]
 ;;
@@ -182,25 +313,24 @@
   (lambda (degree scale steps)
     (let ((scale-n (length scale)))
       (+ (* steps (quotient degree scale-n))
-	 (list-ref scale (exact (mod degree scale-n)))))))
+	 (list-ref scale (inexact->exact (remainder degree scale-n)))))))
 
 ;; int -> [any] -> [any]
 (define without
   (lambda (n l)
-    (append2 (take n l) (drop (+ n 1) l))))
+    (append (take n l) (drop (+ n 1) l))))
 
 ;; [int] -> bool
 (define consecutive?
   (lambda (l)
-    (let ((x (head l))
-	  (xs (tail l)))
+    (let ((x (car l))
+	  (xs (cdr l)))
       (or (null? xs)
-	  (and (= (+ x 1) (head xs))
+	  (and (= (+ x 1) (car xs))
 	       (consecutive? xs))))))
 
 ;; int -> uid
-(define-record-type uid
-  (fields n))
+(struct uid (n) #:constructor-name make-uid #:transparent)
 
 ;; () -> uid
 (define unique-uid
@@ -210,16 +340,15 @@
       (make-uid n))))
 
 ;; string -> int -> control
-(define-record-type control
-  (fields name index))
+(struct control (name index) #:constructor-name make-control #:transparent)
 
 ;; string -> float -> rate -> float -> control*
-(define-record-type control*
-  (fields name default rate index))
+(struct control* (name default rate index)
+  #:constructor-name make-control* #:transparent)
 
 ;; string -> [float] -> [float] -> [controls] -> [ugens] -> graphdef
-(define-record-type graphdef
-  (fields name constants defaults controls ugens))
+(struct graphdef (name constants defaults controls ugens)
+  #:constructor-name make-graphdef #:transparent)
 
 ;; graphdef -> int -> ugen
 (define graphdef-ugen
@@ -237,32 +366,30 @@
     (list-ref (graphdef-constants g) n)))
 
 ;; int -> int -> input
-(define-record-type input
-  (fields ugen port))
+(struct input (ugen port) #:constructor-name make-input #:transparent)
 
 ;; [ugen] -> mce
-(define-record-type mce
-  (fields proxies))
+(struct mce (proxies) #:constructor-name make-mce #:transparent)
 
 ;; ugen -> ugen -> mce
 (define mce2
   (lambda (a b)
-    (make-mce (list2 a b))))
+    (make-mce (list a b))))
 
 ;; ugen -> ugen -> ugen -> mce
 (define mce3
   (lambda (a b c)
-    (make-mce (list3 a b c))))
+    (make-mce (list a b c))))
 
 ;; ugen -> ugen -> ugen -> ugen -> mce
 (define mce4
   (lambda (a b c d)
-    (make-mce (list4 a b c d))))
+    (make-mce (list a b c d))))
 
 ;; ugen -> ugen -> ugen -> ugen -> ugen -> mce
 (define mce5
   (lambda (a b c d e)
-    (make-mce (list5 a b c d e))))
+    (make-mce (list a b c d e))))
 
 ;; node -> [ugen]
 (define mce-channels
@@ -270,8 +397,8 @@
     (cond
      ((mce? u) (mce-proxies u))
      ((mrg? u) (let ((rs (mce-channels (mrg-left u))))
-                 (cons (make-mrg (head rs) (mrg-right u)) rs)))
-     (else (list1 u)))))
+                 (cons (make-mrg (car rs) (mrg-right u)) rs)))
+     (else (list u)))))
 
 ;; mce -> int -> ugen
 (define mce-channel
@@ -279,17 +406,16 @@
     (list-ref (mce-proxies u) n)))
 
 ;; ugen -> ugen -> mrg
-(define-record-type mrg
-  (fields left right))
+(struct mrg (left right) #:constructor-name make-mrg #:transparent)
 
 ;; [ugen] -> mrg
 (define mrg-n
   (lambda (xs)
     (if (null? xs)
 	(error "mrg-n" "nil input list" xs)
-	(if (null? (tail xs))
-	    (head xs)
-	    (mrg2 (head xs) (mrg-n (tail xs)))))))
+	(if (null? (cdr xs))
+	    (car xs)
+	    (mrg2 (car xs) (mrg-n (cdr xs)))))))
 
 ;; ugen -> ugen -> mrg
 (define mrg2
@@ -306,16 +432,13 @@
     (make-mrg a (make-mrg b (make-mrg c d)))))
 
 ;; rate -> output
-(define-record-type output
-  (fields rate))
+(struct output (rate) #:constructor-name make-output #:transparent)
 
 ;; ugen -> int -> proxy
-(define-record-type proxy
-  (fields ugen port))
+(struct proxy (ugen port) #:constructor-name make-proxy #:transparent)
 
 ;; int -> rate
-(define-record-type rate
-  (fields value))
+(struct rate (value) #:constructor-name make-rate #:transparent)
 
 ;; rate
 (define ir
@@ -340,7 +463,7 @@
 	  ((control*? o) (control*-rate o))
 	  ((ugen? o) (ugen-rate o))
 	  ((proxy? o) (rate-of (proxy-ugen o)))
-	  ((mce? o) (rate-select (map1 rate-of (mce-proxies o))))
+	  ((mce? o) (rate-select (map rate-of (mce-proxies o))))
 	  ((mrg? o) (rate-of (mrg-left o)))
 	  (else (error "rate-of" "illegal value" o)))))
 
@@ -366,8 +489,8 @@
     (foldl1 rate-select* l)))
 
 ;; string -> rate -> [ugen] -> [output] -> int -> uid -> ugen
-(define-record-type ugen
-  (fields name rate inputs outputs special id))
+(struct ugen (name rate inputs outputs special id)
+  #:constructor-name make-ugen #:transparent)
 
 ;; ugen -> int -> output
 (define ugen-output
@@ -403,8 +526,8 @@
      (lambda (n r i o s d)
        (and (string? n)
 	    (rate? r)
-	    (and (list? i) (all input*? i))
-	    (and (list? o) (all output? o))
+	    (and (list? i) (and input*? i))
+	    (and (list? o) (and output? o))
 	    (integer? s)
 	    (uid? d))))))
 
@@ -420,13 +543,13 @@
 ;; control -> [bytevector]
 (define encode-control
   (lambda (c)
-    (list2 (encode-pstr (control-name c))
+    (list (encode-pstr (control-name c))
            (encode-i16 (control-index c)))))
 
 ;; input -> [bytevector]
 (define encode-input
   (lambda (i)
-    (list2 (encode-i16 (input-ugen i))
+    (list (encode-i16 (input-ugen i))
            (encode-i16 (input-port i)))))
 
 ;; output -> [bytevector]
@@ -450,8 +573,8 @@
 	(encode-i16 (length i))
 	(encode-i16 (length o))
 	(encode-i16 s)
-	(map1 encode-input i)
-	(map1 encode-output o))))))
+	(map encode-input i)
+	(map encode-output o))))))
 
 ;; graphdef -> bytevector
 (define encode-graphdef
@@ -468,13 +591,13 @@
 	(encode-i16 1)
 	(encode-pstr n)
 	(encode-i16 (length c))
-	(map1 encode-f32 c)
+	(map encode-f32 c)
 	(encode-i16 (length d))
-	(map1 encode-f32 d)
+	(map encode-f32 d)
 	(encode-i16 (length k))
-	(map1 encode-control k)
+	(map encode-control k)
 	(encode-i16 (length u))
-	(map1 encode-ugen u))))))
+	(map encode-ugen u))))))
 
 ;; PLu, this causes the loss of the order of the arguments of the synthdef
 ;;
@@ -496,16 +619,16 @@
 (define construct-ugen
   (lambda (name rate? inputs mce? outputs special id)
     (let* ((inputs* (if mce?
-			(append2 inputs (mce-channels mce?))
+			(append inputs (mce-channels mce?))
 			inputs))
 	   (rate (if rate?
 		     rate?
-		     (rate-select (map1 rate-of inputs*))))
+		     (rate-select (map rate-of inputs*))))
 	   (u (make-ugen
 	       name
 	       rate
 	       inputs*
-	       (replicate outputs (make-output rate))
+	       (make-list outputs (make-output rate))
 	       special
 	       id)))
       (proxify (mce-expand u)))))
@@ -516,10 +639,10 @@
     (cond
      ((ugen? u) (cons u (concat-map graph-nodes (ugen-inputs u))))
      ((proxy? u) (cons u (graph-nodes (proxy-ugen u))))
-     ((control*? u) (list1 u))
-     ((number? u) (list1 u))
-     ((mce? u) (concat (map1 graph-nodes (mce-proxies u))))
-     ((mrg? u) (append2 (graph-nodes (mrg-left u)) (graph-nodes (mrg-right u))))
+     ((control*? u) (list u))
+     ((number? u) (list u))
+     ((mce? u) (concat (map graph-nodes (mce-proxies u))))
+     ((mrg? u) (append (graph-nodes (mrg-left u)) (graph-nodes (mrg-right u))))
      (else (error "graph-nodes" "illegal value" u)))))
 
 ;; ugen -> [float]
@@ -544,7 +667,7 @@
 	(error "ugen-close" "invalid ugen" u)
 	(make-ugen (ugen-name u)
 		   (ugen-rate u)
-		   (map1 (lambda (i)
+		   (map (lambda (i)
 			   (input*-to-input i nn cc uu))
 			 (ugen-inputs u))
 		   (ugen-outputs u)
@@ -561,7 +684,7 @@
      (else u))))
 
 ;; PLu, this is not preserving the order of the arguments of the syntdef.
-;; The order is important when sendign parameters using the n_setn commad.
+;; The order is important when sending parameters using the n_setn commad.
 ;; The order is acctualy lost in letc, before it reaches synthdef
 ;;
 ;; string -> ugen -> graphdef
@@ -575,17 +698,17 @@
       (make-graphdef
        name
        nn
-       (map1 control*-default cc)
-       (map1 (lambda (c) (control*-to-control c cc)) cc)
-       (map1 (lambda (u) (ugen-close u nn cc uu*)) uu*)))))
+       (map control*-default cc)
+       (map (lambda (c) (control*-to-control c cc)) cc)
+       (map (lambda (u) (ugen-close u nn cc uu*)) uu*)))))
 
 ;; [control] -> ugen
 (define implicit-ugen
   (lambda (cc)
     (make-ugen "Control"
 	       kr
-	       nil
-	       (map1 make-output (replicate (length cc) kr))
+	       '()
+	       (map make-output (make-list (length cc) kr))
 	       0
 	       (make-uid 0))))
 
@@ -657,7 +780,7 @@
 (define mce-transpose
   (lambda (u)
     (make-mce
-     (map1 make-mce (transpose (map1 mce-channels (mce-channels u)))))))
+     (map make-mce (transpose (map mce-channels (mce-channels u)))))))
 
 ;; ugen -> bool
 (define mce-required?
@@ -669,8 +792,8 @@
   (lambda (n i)
     (cond ((mce? i) (extend (mce-proxies i) n))
           ((mrg? i) (let ((rs (mce-extend n (mrg-left i))))
-                      (cons (make-mrg (head rs) (mrg-right i)) (tail rs))))
-          (else (replicate n i)))))
+                      (cons (make-mrg (car rs) (mrg-right i)) (cdr rs))))
+          (else (make-list n i)))))
 
 ;; ugen -> mce
 (define mce-transform
@@ -679,15 +802,15 @@
      u
      (lambda (n r i o s d)
        (let* ((f (lambda (i*) (make-ugen n r i* o s d)))
-	      (m (maximum (map1 mce-degree (filter mce? i))))
+	      (m (maximum (map mce-degree (filter mce? i))))
 	      (e (lambda (i) (mce-extend m i)))
-	      (i* (transpose (map1 e i))))
-	 (make-mce (map1 f i*)))))))
+	      (i* (transpose (map e i))))
+	 (make-mce (map f i*)))))))
 
 ;; node -> node|mce
 (define mce-expand
   (lambda (u)
-    (cond ((mce? u) (make-mce (map1 mce-expand (mce-proxies u))))
+    (cond ((mce? u) (make-mce (map mce-expand (mce-proxies u))))
           ((mrg? u) (make-mrg (mce-expand (mrg-left u)) (mrg-right u)))
           (else (if (mce-required? u)
                     (mce-transform u)
@@ -697,14 +820,14 @@
 (define proxify
   (lambda (u)
     (cond
-     ((mce? u) (make-mce (map1 proxify (mce-proxies u))))
+     ((mce? u) (make-mce (map proxify (mce-proxies u))))
      ((mrg? u) (make-mrg (proxify (mrg-left u)) (mrg-right u)))
      ((ugen? u) (let* ((o (ugen-outputs u))
-		       (n (mlength o)))
+		       (n (length o)))
 		  (if (< n 2)
 		      u
-		      (make-mce (map1 (lambda (i) (make-proxy u i))
-				      (enum-from-to 0 (- n 1)))))))
+		      (make-mce (map (lambda (i) (make-proxy u i))
+				      (range 0 n))))))
      (else (error "proxify" "illegal ugen" u)))))
 
 ;; int -> maybe (float -> float) -> (node -> node)
@@ -714,7 +837,7 @@
       (if (and (number? a)
 	       f)
 	  (f a)
-	  (construct-ugen "UnaryOpUGen" #f (list1 a) #f 1 s (make-uid 0))))))
+	  (construct-ugen "UnaryOpUGen" #f (list a) #f 1 s (make-uid 0))))))
 
 ;; int -> maybe (float -> float -> float) -> (node -> node -> node)
 (define mk-binary-operator
@@ -724,7 +847,7 @@
 	       (number? b)
 	       f)
 	  (f a b)
-	  (construct-ugen "BinaryOpUGen" #f (list2 a b) #f 1 s (make-uid 0))))))
+	  (construct-ugen "BinaryOpUGen" #f (list a b) #f 1 s (make-uid 0))))))
 
 ;; string -> [symbol] -> int ~> (ugen ... -> ugen)
 (define-syntax mk-filter
@@ -810,7 +933,7 @@
 (define-syntax mk-specialized-c
   (syntax-rules ()
     ((_ m o r)
-     (construct-ugen m r nil #f o 0 (make-uid 0)))))
+     (construct-ugen m r '() #f o 0 (make-uid 0)))))
 
 ;; string -> [symbol] -> int -> rate ~> (ugen ... -> ugen)
 (define-syntax mk-specialized-mce
@@ -844,112 +967,142 @@
      (lambda (i ... v)
        (construct-ugen m r (list i ...) v o 0 (unique-uid))))))
 
+(define *unary-op-code-hash* (make-hash))
+
+(define (unary-op-add-code code name)
+  (hash-set! *unary-op-code-hash* code name))
+
+(define (unary-op-code->name code)
+  (hash-ref *unary-op-code-hash* code))
+
+(define-syntax define-unary-op
+  (syntax-rules ()
+    ((_ name code v)
+     (begin
+       (define name (mk-unary-operator code v))
+       (unary-op-add-code code 'name)))))
+
+(define *binary-op-code-hash* (make-hash))
+
+(define (binary-op-add-code code name)
+  (hash-set! *binary-op-code-hash* code name))
+
+(define (binary-op-code->name code)
+  (hash-ref *binary-op-code-hash* code))
+
+(define-syntax define-binary-op
+  (syntax-rules ()
+    ((_ name code v)
+     (begin
+       (define name (mk-binary-operator code v))
+       (binary-op-add-code code 'name)))))
+
 ;; ugen -> ugen
-(define u:abs (mk-unary-operator 5 abs))
-(define amp-db (mk-unary-operator 22 s:amp-db))
-(define arc-cos (mk-unary-operator 32 acos))
-(define arc-sin (mk-unary-operator 31 asin))
-(define arc-tan (mk-unary-operator 33 atan))
-(define as-float (mk-unary-operator 6 #f))
-(define as-int (mk-unary-operator 7 #f))
-(define bi-lin-rand (mk-unary-operator 40 #f))
-(define bit-not (mk-unary-operator 4 #f))
-(define cps-midi (mk-unary-operator 18 s:cps-midi))
-(define cps-oct (mk-unary-operator 24 s:cps-oct))
-(define ceil (mk-unary-operator 8 ceiling))
-(define coin (mk-unary-operator 44 #f))
-(define u:cos (mk-unary-operator 29 cos))
-(define cos-h (mk-unary-operator 35 #f))
-(define cubed (mk-unary-operator 13 s:cubed))
-(define db-amp (mk-unary-operator 21 s:db-amp))
-(define digit-value (mk-unary-operator 45 #f))
-(define distort (mk-unary-operator 42 #f))
-(define u:exp (mk-unary-operator 15 exp))
-(define u:floor (mk-unary-operator 9 floor))
-(define frac (mk-unary-operator 10 #f))
-(define han-window (mk-unary-operator 49 #f))
-(define is-nil (mk-unary-operator 2 #f))
-(define u:log (mk-unary-operator 25 log))
-(define log10 (mk-unary-operator 27 s:log10))
-(define log2 (mk-unary-operator 26 s:log2))
-(define midi-cps (mk-unary-operator 17 s:midi-cps))
-(define midi-ratio (mk-unary-operator 19 s:midi-ratio))
-(define neg (mk-unary-operator 0 -))
-(define u:not (mk-unary-operator 1 #f))
-(define not-nil (mk-unary-operator 3 #f))
-(define oct-cps (mk-unary-operator 23 s:oct-cps))
-(define rand2 (mk-unary-operator 38 #f))
-(define ratio-midi (mk-unary-operator 20 s:ratio-midi))
-(define recip (mk-unary-operator 16 s:recip))
-(define rect-window (mk-unary-operator 48 #f))
-(define scurve (mk-unary-operator 53 #f))
-(define sign (mk-unary-operator 11 #f))
-(define silence (mk-unary-operator 46 #f))
-(define u:sin (mk-unary-operator 28 sin))
-(define sin-h (mk-unary-operator 34 #f))
-(define soft-clip (mk-unary-operator 43 #f))
-(define u:sqrt (mk-unary-operator 14 sqrt))
-(define squared (mk-unary-operator 12 s:squared))
-(define sum3rand (mk-unary-operator 41 #f))
-(define u:tan (mk-unary-operator 30 tan))
-(define tan-h (mk-unary-operator 36 #f))
-(define thru (mk-unary-operator 47 #f))
-(define tri-window (mk-unary-operator 51 #f))
-(define welch-window (mk-unary-operator 50 #f))
-(define lin-rand* (mk-unary-operator 39 #f))
-(define ramp* (mk-unary-operator 52 #f))
-(define rand* (mk-unary-operator 37 #f))
+(define-unary-op u:abs 5 abs)
+(define-unary-op amp-db 22 s:amp-db)
+(define-unary-op arc-cos 32 acos)
+(define-unary-op arc-sin 31 asin)
+(define-unary-op arc-tan 33 atan)
+(define-unary-op as-float 6 #f)
+(define-unary-op as-int 7 #f)
+(define-unary-op bi-lin-rand 40 #f)
+(define-unary-op bit-not 4 #f)
+(define-unary-op cps-midi 18 s:cps-midi)
+(define-unary-op cps-oct 24 s:cps-oct)
+(define-unary-op ceil 8 ceiling)
+(define-unary-op coin 44 #f)
+(define-unary-op u:cos 29 cos)
+(define-unary-op cos-h 35 #f)
+(define-unary-op cubed 13 s:cubed)
+(define-unary-op db-amp 21 s:db-amp)
+(define-unary-op digit-value 45 #f)
+(define-unary-op distort 42 #f)
+(define-unary-op u:exp 15 exp)
+(define-unary-op u:floor 9 floor)
+(define-unary-op frac 10 #f)
+(define-unary-op han-window 49 #f)
+(define-unary-op is-nil 2 #f)
+(define-unary-op u:log 25 log)
+(define-unary-op log10 27 s:log10)
+(define-unary-op log2 26 s:log2)
+(define-unary-op midi-cps 17 s:midi-cps)
+(define-unary-op midi-ratio 19 s:midi-ratio)
+(define-unary-op neg 0 -)
+(define-unary-op u:not 1 #f)
+(define-unary-op not-nil 3 #f)
+(define-unary-op oct-cps 23 s:oct-cps)
+(define-unary-op rand2 38 #f)
+(define-unary-op ratio-midi 20 s:ratio-midi)
+(define-unary-op recip 16 s:recip)
+(define-unary-op rect-window 48 #f)
+(define-unary-op scurve 53 #f)
+(define-unary-op sign 11 #f)
+(define-unary-op silence 46 #f)
+(define-unary-op u:sin 28 sin)
+(define-unary-op sin-h 34 #f)
+(define-unary-op soft-clip 43 #f)
+(define-unary-op u:sqrt 14 sqrt)
+(define-unary-op squared 12 s:squared)
+(define-unary-op sum3rand 41 #f)
+(define-unary-op u:tan 30 tan)
+(define-unary-op tan-h 36 #f)
+(define-unary-op thru 47 #f)
+(define-unary-op tri-window 51 #f)
+(define-unary-op welch-window 50 #f)
+(define-unary-op lin-rand* 39 #f)
+(define-unary-op ramp* 52 #f)
+(define-unary-op rand* 37 #f)
 
 ;; ugen -> ugen -> ugen
-(define am-clip (mk-binary-operator 40 #f))
-(define abs-dif (mk-binary-operator 38 #f))
-(define add (mk-binary-operator 0 +))
-(define atan2 (mk-binary-operator 22 #f))
-(define bit-and (mk-binary-operator 14 #f))
-(define bit-or (mk-binary-operator 15 #f))
-(define bit-xor (mk-binary-operator 16 #f))
-(define clip2 (mk-binary-operator 42 #f))
-(define dif-sqr (mk-binary-operator 34 #f))
-(define eq (mk-binary-operator 6 #f))
-(define excess (mk-binary-operator 43 #f))
-(define exp-rand-range (mk-binary-operator 48 #f))
-(define fdiv (mk-binary-operator 4 /))
-(define fill (mk-binary-operator 29 #f))
-(define first-arg (mk-binary-operator 46 #f))
-(define fold2 (mk-binary-operator 44 #f))
-(define u:gcd (mk-binary-operator 18 #f))
-(define ge (mk-binary-operator 11 s:ge))
-(define gt (mk-binary-operator 9 s:gt))
-(define hypot (mk-binary-operator 23 #f))
-(define hypotx (mk-binary-operator 24 #f))
-(define idiv (mk-binary-operator 3 #f))
-(define u:lcm (mk-binary-operator 17 #f))
-(define le (mk-binary-operator 10 s:le))
-(define lt (mk-binary-operator 8 s:lt))
-(define u:max (mk-binary-operator 13 max))
-(define u:min (mk-binary-operator 12 min))
-(define u:mod (mk-binary-operator 5 #f))
-(define mul (mk-binary-operator 2 *))
-(define ne (mk-binary-operator 7 #f))
-(define pow (mk-binary-operator 25 #f))
-(define rand-range (mk-binary-operator 47 #f))
-(define ring1 (mk-binary-operator 30 #f))
-(define ring2 (mk-binary-operator 31 #f))
-(define ring3 (mk-binary-operator 32 #f))
-(define ring4 (mk-binary-operator 33 #f))
-(define u:round (mk-binary-operator 19 #f))
-(define round-up (mk-binary-operator 20 #f))
-(define scale-neg (mk-binary-operator 41 #f))
-(define shift-left (mk-binary-operator 26 #f))
-(define shift-right (mk-binary-operator 27 #f))
-(define sqr-dif (mk-binary-operator 37 #f))
-(define sqr-sum (mk-binary-operator 36 #f))
-(define sub (mk-binary-operator 1 -))
-(define sum-sqr (mk-binary-operator 35 #f))
-(define thresh (mk-binary-operator 39 #f))
-(define trunc (mk-binary-operator 21 #f))
-(define unsigned-shift (mk-binary-operator 28 #f))
-(define wrap2 (mk-binary-operator 45 #f))
+(define-binary-op am-clip 40 #f)
+(define-binary-op abs-dif 38 #f)
+(define-binary-op add 0 +)
+(define-binary-op atan2 22 #f)
+(define-binary-op bit-and 14 #f)
+(define-binary-op bit-or 15 #f)
+(define-binary-op bit-xor 16 #f)
+(define-binary-op clip2 42 #f)
+(define-binary-op dif-sqr 34 #f)
+(define-binary-op eq 6 #f)
+(define-binary-op excess 43 #f)
+(define-binary-op exp-rand-range 48 #f)
+(define-binary-op fdiv 4 /)
+(define-binary-op fill 29 #f)
+(define-binary-op first-arg 46 #f)
+(define-binary-op fold2 44 #f)
+(define-binary-op u:gcd 18 #f)
+(define-binary-op ge 11 s:ge)
+(define-binary-op gt 9 s:gt)
+(define-binary-op hypot 23 #f)
+(define-binary-op hypotx 24 #f)
+(define-binary-op idiv 3 #f)
+(define-binary-op u:lcm 17 #f)
+(define-binary-op le 10 s:le)
+(define-binary-op lt 8 s:lt)
+(define-binary-op u:max 13 max)
+(define-binary-op u:min 12 min)
+(define-binary-op u:mod 5 #f)
+(define-binary-op mul 2 *)
+(define-binary-op ne 7 #f)
+(define-binary-op pow 25 #f)
+(define-binary-op rand-range 47 #f)
+(define-binary-op ring1 30 #f)
+(define-binary-op ring2 31 #f)
+(define-binary-op ring3 32 #f)
+(define-binary-op ring4 33 #f)
+(define-binary-op u:round 19 #f)
+(define-binary-op round-up 20 #f)
+(define-binary-op scale-neg 41 #f)
+(define-binary-op shift-left 26 #f)
+(define-binary-op shift-right 27 #f)
+(define-binary-op sqr-dif 37 #f)
+(define-binary-op sqr-sum 36 #f)
+(define-binary-op sub 1 -)
+(define-binary-op sum-sqr 35 #f)
+(define-binary-op thresh 39 #f)
+(define-binary-op trunc 21 #f)
+(define-binary-op unsigned-shift 28 #f)
+(define-binary-op wrap2 45 #f)
 
 (define allpass-c (mk-filter "AllpassC" (in max-dt dt decay) 1))
 (define allpass-l (mk-filter "AllpassL" (in max-dt dt decay) 1))
@@ -1353,14 +1506,14 @@
 (define exponential 1)
 
 (define quit
-  (message "/quit" nil))
+  (message "/quit" '()))
 
 (define notify
   (lambda (i)
     (message "/notify" (list i))))
 
 (define status
-  (message "/status" nil))
+  (message "/status" '()))
 
 (define dump-osc
   (lambda (i)
@@ -1371,7 +1524,7 @@
     (message "/sync" (list i))))
 
 (define clear-sched
-  (message "/clearSched" nil))
+  (message "/clearSched" '()))
 
 (define d-recv
   (lambda (b)
@@ -1399,7 +1552,7 @@
 
 (define n-set
   (lambda (i xys)
-    (let ((z (concat-map (lambda (xy) (list (fst xy) (snd xy))) xys)))
+    (let ((z (concat-map (lambda (xy) (list (car xy) (cdr xy))) xys)))
       (message "/n_set" (cons i z)))))
 
 (define n-set1
@@ -1414,7 +1567,7 @@
   (lambda (i s j f)
     (message "/n_fill" (list i s j f))))
 
-(define n-map1
+(define n-map
   (lambda (i s j)
     (message "/n_map" (list i s j))))
 
@@ -1448,7 +1601,7 @@
 
 (define s-new
   (lambda (s i j k cs)
-    (message "/s_new" (append2 (list s i j k) cs))))
+    (message "/s_new" (append (list s i j k) cs))))
 
 (define s-get1
   (lambda (i j)
@@ -1564,6 +1717,11 @@
     (send fd m)
     (wait fd "/done")))
 
+;; port -> graphdef -> ()
+(define send-synthdef
+  (lambda (fd u)
+    (async fd (d-recv (encode-graphdef u)))))
+
 ;; port -> string -> ugen -> ()
 (define send-synth
   (lambda (fd n u)
@@ -1648,7 +1806,7 @@
     (cons "***** SuperCollider Server Status *****"
 	  (zip-with string-append
 		    status-fields
-		    (map1 number->string (tail (tail r)))))))
+		    (map number->string (cdr (cdr r)))))))
 
 ;; port -> [string]
 (define server-status
@@ -1716,8 +1874,8 @@
 (define env
   (lambda (levels times curves release-node loop-node)
     (make-mce
-     (append2
-      (list (head levels) (length times) release-node loop-node)
+     (append
+      (list (car levels) (length times) release-node loop-node)
       (concat
        (zip-with3
 	(lambda (l t c)
@@ -1725,7 +1883,7 @@
 		t
 		(curve-to-shape c)
 		(curve-to-value c)))
-	(tail levels)
+	(cdr levels)
 	times
 	curves))))))
 
@@ -1737,15 +1895,15 @@
 ;; [(ugen . ugen)] -> ugen -> ugen -> [ugen] -> ugen
 (define env-coord
   (lambda (d dur amp curves)
-    (env (map1 (lambda (e) (mul (cdr e) amp)) d)
-         (map1 (lambda (e) (mul e dur)) (d->dx (map car d)))
+    (env (map (lambda (e) (mul (cdr e) amp)) d)
+         (map (lambda (e) (mul e dur)) (d->dx (map car d)))
          curves
          -1
          -1)))
 
 (define env-coord-linear
   (lambda (d dur amp)
-    (env-coord d dur amp (replicate (- (length d) 1) 1))))
+    (env-coord d dur amp (make-list (- (length d) 1) 1))))
 
 ;; (equal? (mk-coord (list 1 2 3 4)) (list (cons 1 2) (cons 3 4)))
 (define mk-coord
@@ -1777,7 +1935,7 @@
 		     (cons x1 1.0)
 		     (cons (add shape x1) 1.0)
 		     (cons 1.0 (ge skew 1.0)))))
-      (env-coord bp dur amp (replicate 3 "linear")))))
+      (env-coord bp dur amp (make-list 3 "linear")))))
 
 (define env-triangle
   (lambda (dur level)
@@ -1813,7 +1971,7 @@
 	   peakLevel
 	   curves
 	   bias)
-    (env (map1 (lambda (e) (mul e bias))
+    (env (map (lambda (e) (mul e bias))
                (list 0.0 peakLevel (mul peakLevel sustainLevel) 0.0))
 	 (list attackTime decayTime releaseTime)
 	 curves
@@ -1852,15 +2010,15 @@
 
 (define unpack-fft
   (lambda (c nf from to mp?)
-    (map1 (lambda (i)
+    (map (lambda (i)
             (unpack1-fft c nf i mp?))
-	 (enum-from-to from to))))
+	 (range from (add1 to)))))
 
 (define pvcollect
   (lambda (c nf f from to z?)
     (let* ((m (unpack-fft c nf from to 0))
 	   (p (unpack-fft c nf from to 1))
-	   (i (enum-from-to from to))
+	   (i (range from (add1 to)))
 	   (e (zip-with3 f m p i)))
       (pack-fft c nf from to z? (packfft-data* e)))))
 
@@ -1870,7 +2028,7 @@
     (if (mce? n)
 	(let ((l (mce-proxies n)))
 	  (if (consecutive? l)
-	      (in (length l) ar (add num-output-buses (head l)))
+	      (in (length l) ar (add num-output-buses (car l)))
 	      (in 1 ar (add num-output-buses n))))
 	(in 1 ar (add num-output-buses n)))))
 
@@ -1880,7 +2038,7 @@
     (make-mce
      (concat
       (zip-with3
-       list3
+       list
        freqs amps phases)))))
 
 ;; [ugen] -> [ugen] -> [ugen] -> ugen
@@ -1928,7 +2086,7 @@
 ;; int -> (int -> ugen) -> mce
 (define mce-fill
   (lambda (n f)
-    (make-mce (map1 f (enum-from-to 0 (- n 1))))))
+    (make-mce (map f (range 0 n)))))
 
 ;; int -> (int -> ugen) -> ugen
 (define mix-fill
@@ -1995,7 +2153,7 @@
 ;; double -> void
 (define pause-thread
   (lambda (n)
-    (if (> n 1e-4)
+    (when (> n 1e-4)
         (thread-sleep n))))
 
 ;; double -> void
@@ -2049,3 +2207,13 @@
                  #"\0\5\2\3Out\2\0\2\0\0\0\0\377\377\0\0\0\4\0\0"))
   
   )
+
+#|
+(define x (encode-graphdef (synthdef "sine" (mul (sin-osc ar 440 0) 0.1))))
+
+(synthdef "sine" (mul (sin-osc ar 440 0) 0.1))
+(define pre-u (mul (sin-osc ar 440 0) 0.1))
+(define u (prepare-root pre-u))
+
+
+|#

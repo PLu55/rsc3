@@ -12,7 +12,17 @@
           (else (cons (f (car a) (car b))
                       (zip-with f (cdr a) (cdr b)))))))
 
-(provide (all-defined-out)
+(provide ;(all-defined-out)
+
+         read-pstr
+         read-i8
+         read-i16
+         read-i32
+         read-f32
+         read-bstr
+         bytevector=?
+         
+         flatten-bytevectors
          message
          bundle
          encode-osc
@@ -23,7 +33,9 @@
          encode-f32
          encode-pstr
          encode-u32
-         decode-u32 )
+         decode-u32
+         encode-u64
+         decode-u64)
 
 ;; bytevector -> int
 (define decode-u8

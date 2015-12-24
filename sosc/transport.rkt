@@ -1,16 +1,11 @@
 #lang racket
 
-;; from transport.scm ;;;;;;;
-
-(require rnrs
-         "bytevector.rkt"
+(require "bytevector.rkt"
          "sosc.rkt"
          "ip.rkt")
 
 (provide (all-defined-out)
          (all-from-out "ip.rkt"))
-
-
 
 ;; socket -> osc -> ()
 (define send

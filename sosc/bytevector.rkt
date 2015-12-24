@@ -1,7 +1,6 @@
 #lang racket
 
 (require rnrs
-         rhs/rhs
          rnrs/bytevectors-6
          rnrs/io/ports-6)
 
@@ -9,6 +8,7 @@
          lookahead-u8
          get-u8
          make-bytevector
+         bytevector=?
          bytevector-copy!
          bytevector?
          put-bytevector

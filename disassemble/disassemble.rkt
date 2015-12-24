@@ -1,13 +1,16 @@
 #lang racket
 
-(require rnrs
-         ;rhs/rhs
-         rsc3
-         sosc/sosc
+(require racket/fixnum
+         ;rnrs
+         ;rhs/rhs ;nub
+         "../rsc3/main.rkt"
+         "../sosc/sosc.rkt"
+         "../sosc/bytevector.rkt"
          (prefix-in srfi: srfi/1)
          "graphdef.rkt")
 
 (provide  (all-defined-out))
+
 
 (define quantize
   (lambda (q n)
@@ -23,7 +26,7 @@
 
 (define control-ugen?
   (lambda (u)
-    (elem (ugen-name u)
+    (member (ugen-name u)
           (list "Control" "LagControl" "TrigControl"))))
 
 (define root-ugens
@@ -64,7 +67,7 @@
            (special (ugen-special ugen))
            (name* (ugen-name ugen))
            ;(name (string->symbol (or2 (operator-name ugen) (scheme-name name*))))
-           (name (string->symbol (or (operator-name ugen) (scheme-name name*))))
+           (name (or (operator-name ugen) (scheme-name name*)))
            (user-inputs
             (map
              (lambda (input)
@@ -92,17 +95,56 @@
                   (pass-one g (root-ugen g) controls))))))
 
 (define (rate->symbol rate)
-  (case rate
+  (case (rate-value rate)
     ((0) 'ir)
     ((1) 'kr)
     ((2) 'ar)
     ((3) 'dr)
-    (else 'unknown)))
+    (else 'unknown-rate)))
+
 
 (define (operator-name ugen)
-  (printf "operator-name ~a~n" ugen)
-  'a)
+  (cond [(equal? (ugen-name ugen) "UnaryOpUGen")
+         (unary-op-code->name (ugen-special ugen))]
+        [(equal? (ugen-name ugen) "BinaryOpUGen")
+         (binary-op-code->name (ugen-special ugen))]
+        [else #f]))
 
-(define (scheme-name ugen)
-  (printf "scheme-name ~a~n" ugen)
-  'b)
+(define (scheme-name name*)
+  name*)
+
+#|
+(graphdef-disassemble (decode-graphdef (encode-graphdef (synthdef "sine" (mul (sin-osc ar 440 0) 0.1)))))
+
+(define g (decode-graphdef (encode-graphdef (synthdef "sine" (mul (sin-osc ar 440 0) 0.1)))))
+(disassemble-controls g)
+(graphdef-name g)
+(root-ugen g)
+(pass-one g (root-ugen g) (disassemble-controls g))
+
+(define ugen (graphdef-ugen g (root-ugen g)))
+ugen
+(ugen-inputs ugen)
+(ugen-name ugen)
+(string->symbol (or (operator-name ugen) (scheme-name name*)))
+
+(define filt-noise
+  (letc ((ampl 0.1)
+         (freq 1500.0)
+         (bw 0.1)
+         (lag-time 0.02)
+         (outbus 0))
+        (let* ([n (mul (white-noise ar) (lag ampl lag-time))]
+               [res (resonz n (lag freq lag-time) (lag bw lag-time))])
+          (out outbus res))))
+
+(decode-graphdef (encode-graphdef (synthdef "filt-noise" filt-noise)))
+(graphdef-disassemble (decode-graphdef (encode-graphdef (synthdef "filt-noise" filt-noise))))
+
+See:
+http://doc.sccode.org/Reference/Synth-Definition-File-Format.html
+file://usr/share/SuperCollider/SCClassLibrary/Common/Audio/SynthDef.sc
+
+
+|#
+

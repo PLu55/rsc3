@@ -1,10 +1,11 @@
 #lang racket
 
-(require rnrs
-         rsc3
-         sosc/sosc
-         rhs/rhs
+(require "../rsc3/main.rkt"
+         "../sosc/sosc.rkt"
+         "../sosc/bytevector.rkt"
          (prefix-in srfi: srfi/1))
+
+(provide decode-graphdef)
 
 ;; Decode a binary 'Graph Definition'.  File containing more than one
 ;; graph definition are not supported.
@@ -41,6 +42,7 @@
                  outputs
                  special
                  k))))
+
 (define read-list
   (lambda (n f p)
     (map (lambda (_) (f p)) (srfi:iota n))))
@@ -54,11 +56,11 @@
     (let* ((magic (read-bstr p 4))
            (version (read-i32 p))
            (number-of-definitions (read-i16 p)))
-      (if (not (bytevector=? magic (string->utf8 "SCgf")))
+      (when (not (bytevector=? magic (string->utf8 "SCgf")))
           (error "read-graphdef: illegal magic string" magic))
-      (if (not (= version 0))
+      (when (not (= version 0))
           (error "read-graphdef: version not at zero" version))
-      (if (not (= number-of-definitions 1))
+      (when (not (= number-of-definitions 1))
           (error "read-graphdef: non unary graphdef file" number-of-definitions))
       (let* ((name (read-pstr p))
              (number-of-constants (read-i16 p))
@@ -84,11 +86,16 @@
                        controls
                        ugens)))))
 
+(define (decode-graphdef bstr)
+  (with-input-from-bytes bstr
+    (lambda () (read-graphdef (current-input-port)))))
+
 (define read-graphdef-file
   (lambda (nm)
-    (let* ((p (open-file-input-port nm))
+    ;(let* ((p (open-file-input-port nm))
+    (let* ((p (open-input-file nm))
            (g (read-graphdef p)))
-      (close-port p)
+      (close-input-port p)
       g)))
 
 (define trace
@@ -97,3 +104,17 @@
     (display x)
     (newline)
     x))
+
+#|
+(define x (encode-graphdef (synthdef "sine" (mul (sin-osc ar 440 0) 0.1))))
+(subbytes x 0 4)
+(in-bytes x)
+
+(let* ([port (open-input-bytes x)]
+       [res  (read-graphdef port)])
+  (close-input-port port)
+  res)
+
+(decode-graphdef x)
+x
+|#
