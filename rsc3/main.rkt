@@ -9,9 +9,9 @@
 ;;;       Synthdef version is set to zero!
 
 (require
-  "../sosc/bytevector.rkt"
-  "../sosc/transport.rkt"
-  "../sosc/sosc.rkt"
+  sosc/bytevector
+  sosc/transport
+  sosc/sosc
   (prefix-in srfi: srfi/27)  ;; Random bits
   (prefix-in srfi: srfi/19)) ;; Time Data Types, now defined in racket/base 
 

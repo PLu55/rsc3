@@ -5,7 +5,7 @@
 
 (require (prefix-in plt: racket)
          (prefix-in plt: racket/udp)
-         "bytevector.rkt")
+         sosc/bytevector)
 
 (provide (all-defined-out))
 

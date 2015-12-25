@@ -1,11 +1,11 @@
 #lang racket
 
-(require "bytevector.rkt"
-         "sosc.rkt"
-         "ip.rkt")
+(require sosc/bytevector
+         sosc/sosc
+         sosc/ip)
 
 (provide (all-defined-out)
-         (all-from-out "ip.rkt"))
+         (all-from-out sosc/ip))
 
 ;; socket -> osc -> ()
 (define send

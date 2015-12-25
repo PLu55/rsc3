@@ -1,7 +1,7 @@
 #lang racket
 
 (require racket/fixnum
-         "bytevector.rkt"
+         sosc/bytevector
          )
 
 ;zip-with (a -> b -> c) -> [a] -> [b] -> [c]  
