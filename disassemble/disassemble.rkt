@@ -1,11 +1,9 @@
 #lang racket
 
 (require racket/fixnum
-         ;rnrs
-         ;rhs/rhs ;nub
-         "../rsc3/main.rkt"
-         "../sosc/sosc.rkt"
-         "../sosc/bytevector.rkt"
+         rsc3
+         sosc/sosc
+         sosc/bytevector
          (prefix-in srfi: srfi/1)
          "graphdef.rkt")
 

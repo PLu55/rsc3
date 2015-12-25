@@ -1,8 +1,8 @@
 #lang racket
 
-(require "../rsc3/main.rkt"
-         "../sosc/sosc.rkt"
-         "../sosc/bytevector.rkt"
+(require rsc3
+         sosc/sosc
+         sosc/bytevector
          (prefix-in srfi: srfi/1))
 
 (provide decode-graphdef)
