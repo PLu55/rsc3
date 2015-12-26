@@ -16,12 +16,16 @@
 
 (define disassemble-controls
   (lambda (g)
-    (map (lambda (control default)
-           (list (string->symbol (control-name control))
-                 (quantize 0.001 default)))
-         (graphdef-controls g)
-         (graphdef-defaults g))))
-
+    (map (lambda (l) (take l 2))
+         (sort    
+          (map (lambda (control default)
+                 (list (string->symbol (control-name control))
+                       (quantize 0.00001 default)
+                       (control-index control)))
+               (graphdef-controls g)
+               (graphdef-defaults g))
+          (lambda (a b) (< (caddr a)(caddr b)))))))
+         
 (define control-ugen?
   (lambda (u)
     (member (ugen-name u)
@@ -54,43 +58,43 @@
 
 (define determine-control-index
   (lambda (g u o)
+    
     (if (= u 0) o (error "multiple rate controls not supported" u o))))
 
+;(define (control-find controls idx)
+  
 (define pass-one
-  (lambda (g n controls)
+  (lambda (g n)
     (let* ((ugen (graphdef-ugen g n))
-           (rate (rate->symbol (make-rate (ugen-rate ugen))))
+           (rate (rate->symbol (rate (ugen-rate ugen))))
+           (controls (sort (graphdef-controls g)
+                           (lambda (a b)
+                             (< (control-index a)(control-index b)))))
            (inputs (ugen-inputs ugen))
            (outputs (ugen-outputs ugen))
            (special (ugen-special ugen))
-           (name* (ugen-name ugen))
-           ;(name (string->symbol (or2 (operator-name ugen) (scheme-name name*))))
-           (name (or (operator-name ugen) (scheme-name name*)))
-           (user-inputs
+           (symbol (ugen-symbol ugen))
+           (parameters
             (map
              (lambda (input)
                (let ((ugen-index (input-ugen input)))
                  (if (= ugen-index -1)
                      (quantize 0.001 (graphdef-constant g (input-port input)))
                      (if (control-ugen? (graphdef-ugen g ugen-index))
-                         (car (list-ref
-                               controls
-                               (determine-control-index
-                                g
-                                ugen-index
-                                (input-port input))))
-                         (pass-one g ugen-index controls)))))
+                         (string->symbol
+                          (control-name (list-ref controls  (input-port input))))
+                         (pass-one g ugen-index)))))
              inputs)))
-      (cons name (cons rate user-inputs)))))
+      (cons symbol (cons rate parameters)))))
 
+;;; disassemble-controls discard index information
 (define graphdef-disassemble
   (lambda (g)
-    (let ((controls (disassemble-controls g)))
-      (list 'synthdef
-            (graphdef-name g)
-            (list 'letc
-                  controls
-                  (pass-one g (root-ugen g) controls))))))
+    (list 'synthdef
+          (graphdef-name g)
+          (list 'letc
+                (disassemble-controls g)
+                (pass-one g (root-ugen g))))))
 
 (define (rate->symbol rate)
   (case (rate-value rate)
@@ -100,16 +104,13 @@
     ((3) 'dr)
     (else 'unknown-rate)))
 
-
-(define (operator-name ugen)
+(define (ugen-symbol ugen)
   (cond [(equal? (ugen-name ugen) "UnaryOpUGen")
          (unary-op-code->name (ugen-special ugen))]
         [(equal? (ugen-name ugen) "BinaryOpUGen")
          (binary-op-code->name (ugen-special ugen))]
-        [else #f]))
-
-(define (scheme-name name*)
-  name*)
+        [else
+         (ugen-name->symbol (ugen-name ugen))]))
 
 #|
 (graphdef-disassemble (decode-graphdef (encode-graphdef (synthdef "sine" (mul (sin-osc ar 440 0) 0.1)))))
