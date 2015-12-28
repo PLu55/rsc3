@@ -5,7 +5,8 @@
          sosc/bytevector
          (prefix-in srfi: srfi/1))
 
-(provide decode-graphdef)
+(provide decode-graphdef
+         read-graphdef-file)
 
 ;; Decode a binary 'Graph Definition'.  File containing more than one
 ;; graph definition are not supported.

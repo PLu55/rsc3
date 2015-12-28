@@ -56,13 +56,6 @@
           (error "root-ugen" "multiple root ugens not supported")
           (car r)))))
 
-(define determine-control-index
-  (lambda (g u o)
-    
-    (if (= u 0) o (error "multiple rate controls not supported" u o))))
-
-;(define (control-find controls idx)
-  
 (define pass-one
   (lambda (g n)
     (let* ((ugen (graphdef-ugen g n))
@@ -70,7 +63,7 @@
            (controls (sort (graphdef-controls g)
                            (lambda (a b)
                              (< (control-index a)(control-index b)))))
-           (inputs (ugen-inputs ugen))
+           (inputs (ugen-inputs ugen)) ;<------------ must be treated differently in case of mce
            (outputs (ugen-outputs ugen))
            (special (ugen-special ugen))
            (symbol (ugen-symbol ugen))
@@ -80,14 +73,24 @@
                (let ((ugen-index (input-ugen input)))
                  (if (= ugen-index -1)
                      (quantize 0.001 (graphdef-constant g (input-port input)))
-                     (if (control-ugen? (graphdef-ugen g ugen-index))
-                         (string->symbol
-                          (control-name (list-ref controls  (input-port input))))
-                         (pass-one g ugen-index)))))
+                     (let ((src-ugen (graphdef-ugen g ugen-index)))
+                       ;(printf "src-ugen: ~a length: outputs:~a~n"
+                       ;  src-ugen  (length (ugen-outputs src-ugen)))
+                       (cond ((control-ugen? src-ugen)
+                              (string->symbol
+                               (control-name (list-ref controls  (input-port input)))))
+                             ((> (length (ugen-outputs src-ugen)) 1)
+                              (if (equal? (input-port input) 0)
+                                  (pass-one g ugen-index)
+                                  #f))
+                             (else
+                              (pass-one g ugen-index)))))))
              inputs)))
-      (cons symbol (cons rate parameters)))))
+      ;(printf "inputs ~a~n" inputs)
+      
+      (cons symbol (cons rate (remq #f parameters)))))) ;<-------- parameters wrong when parent is mce
 
-;;; disassemble-controls discard index information
+;;; TODO: does not handle mce correctly
 (define graphdef-disassemble
   (lambda (g)
     (list 'synthdef
