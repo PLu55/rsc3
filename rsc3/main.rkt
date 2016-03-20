@@ -4,9 +4,8 @@
 ;;;    2015.12.21 PLu
 ;;;       Conserving the position of the parameters to synthdef
 ;;;
-;;; Problems:
-;;;    2015.12.24 PLu
-;;;       Only Synthdef version 1 is implemented.
+;;;    2015.12.26 PLu
+;;;       Synthdef version 2 is implemented.
 
 (require
   sosc/bytevector
@@ -724,10 +723,6 @@
                          (prepare-root (mrg-right u))))
      (else u))))
 
-;; PLu, this is not preserving the order of the arguments of the syntdef.
-;; The order is important when sending parameters using the n_setn commad.
-;; The order is acctualy lost in letc, before it reaches synthdef
-;;
 ;; string -> ugen -> graphdef
 (define synthdef
   (lambda (name pre-u)
@@ -1185,8 +1180,8 @@
 (define-unary-op han-window 49 #f)
 (define-unary-op is-nil 2 #f)
 (define-unary-op u:log 25 log)
-(define-unary-op log10 27 s:log10)
-(define-unary-op log2 26 s:log2)
+(define-unary-op u:log10 27 s:log10)
+(define-unary-op u:log2 26 s:log2)
 (define-unary-op midi-cps 17 s:midi-cps)
 (define-unary-op midi-ratio 19 s:midi-ratio)
 (define-unary-op neg 0 -)
@@ -2367,15 +2362,15 @@
                  #"\0\0\2\aFSinOsc\2\0\2\0\1\0\0\377\377\0\1\377\377\0\0\2\fBinaryOpUGen"
                  #"\2\0\2\0\1\0!\0\2\0\0\0\1\0\0\2\fBinaryOpUGen\2\0\2\0\1\0\2\0\3\0\0\377\377"
                  #"\0\5\2\3Out\2\0\2\0\0\0\0\377\377\0\0\0\4\0\0"))
+
+  
+  (check-equal? (ugens->synthdef  "twoSines" (out 0 (mce2 (mul (sin-osc ar 440. 0.0) 0.2)
+                                                          (mul (sin-osc ar 554.365 0.0) 0.2))))
+                (bytes-append
+                 #"SCgf\0\0\0\0\0\1\btwoSines\0\5\0\0\0\0C\334\0\0\0\0\0\0>L\314\315"
+                 #"D\n\227\\\0\0\0\0\0\5\6SinOsc\2\0\2\0\1\0\0\377\377\0\4\377\377\0"
+                 #"\2\2\fBinaryOpUGen\2\0\2\0\1\0\2\0\0\0\0\377\377\0\3\2\6SinOsc\2"
+                 #"\0\2\0\1\0\0\377\377\0\1\377\377\0\2\2\fBinaryOpUGen\2\0\2\0\1\0\2"
+                 #"\0\2\0\0\377\377\0\3\2\3Out\2\0\3\0\0\0\0\377\377\0\0\0\3\0\0\0\1\0\0"))
   
   )
-
-#|
-(define x (encode-graphdef (synthdef "sine" (mul (sin-osc ar 440 0) 0.1))))
-
-(synthdef "sine" (mul (sin-osc ar 440 0) 0.1))
-(define pre-u (mul (sin-osc ar 440 0) 0.1))
-(define u (prepare-root pre-u))
-
-
-|#
